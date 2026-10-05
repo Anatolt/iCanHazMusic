@@ -73,3 +73,7 @@ Optional `.env` file in the repo root (git-ignored), read by `build.sh`:
 - `ICHM_LASTFM_API_KEY` + `ICHM_LASTFM_API_SECRET` - your own [Last.fm API](https://www.last.fm/api/account/create) credentials. They are embedded (obfuscated) into the bundle's `Info.plist`; without them the Last.fm integration is disabled.
 
 The app keeps its data (config, playlists, caches) in `~/Library/Application Support/iCanHazMusic`; pass `--workdir /some/dir` to the app to use another directory.
+
+For tested Command Line Tools instructions (including a Swift Testing workaround)
+and the GitHub Actions universal preview workflow, see
+[building without Xcode](dev-docs/build-without-xcode.md).
