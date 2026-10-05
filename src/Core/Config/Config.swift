@@ -83,6 +83,8 @@ struct AppConfig: Codable, Equatable {
         var queueEnabled = true
         /// Closing the main window quits the app. Off: only the window closes, playback and everything else go on.
         var closeQuits = false
+        /// Space in the main window pauses/resumes instead of toggling the selected tracks in the queue.
+        var spacePlaysPauses = false
 
         enum CodingKeys: String, CodingKey {
             case playbackNotifications = "playback_notifications"
@@ -91,6 +93,7 @@ struct AppConfig: Codable, Equatable {
             case skippedUpdate = "skipped_update"
             case queueEnabled = "queue_enabled"
             case closeQuits = "close_quits"
+            case spacePlaysPauses = "space_plays_pauses"
         }
 
         init() {}
@@ -104,6 +107,7 @@ struct AppConfig: Codable, Equatable {
             skippedUpdate = c.value(.skippedUpdate, default: d.skippedUpdate)
             queueEnabled = c.value(.queueEnabled, default: d.queueEnabled)
             closeQuits = c.value(.closeQuits, default: d.closeQuits)
+            spacePlaysPauses = c.value(.spacePlaysPauses, default: d.spacePlaysPauses)
         }
     }
 

@@ -242,7 +242,7 @@ struct VirtualPlaylistView: View {
                 // The title is about what the menu will act on: the selection, or the row if that is outside it.
                 let toggle = PlaylistItemActions.queueToggle(for: selection.contains(row) ? selection : [row])
                 Button(toggle.title) { toggleQueued() }
-                    .keyboardShortcut(.space, modifiers: [])
+                    .keyboardShortcut(WindowSettings.shared.spacePlaysPauses ? nil : KeyboardShortcut(.space, modifiers: []))
                     .disabled(toggle.isUnavailable)
             }
 
@@ -330,7 +330,7 @@ struct VirtualPlaylistView: View {
         case 51, 117:       // Backspace, forward delete
             if showsQueue { removeFromQueueSelected() } else { removeSelected() }
         case 49:            // Space
-            guard !showsQueue, playback.queue.isEnabled else { return false }
+            guard !WindowSettings.shared.spacePlaysPauses, !showsQueue, playback.queue.isEnabled else { return false }
             toggleQueued()
         default:
             return false

@@ -184,8 +184,8 @@ private struct GeneralTab: View {
 
             PrefRow(
                 title: "Enable Queue",
-                description: "Queue tracks and albums to play next: press Space on them in a playlist, "
-                    + "or use the search window."
+                description: "Queue tracks and albums to play next using the playlist context menu or search. "
+                    + "Space also works when assigned to the queue (Playback)."
             ) {
                 Toggle("", isOn: $queue.isEnabled)
                     .labelsHidden()
@@ -326,9 +326,23 @@ private struct HotkeyRow: View {
 
 private struct PlaybackTab: View {
     @Bindable private var playback = PlaybackState.shared
+    @Bindable private var windowSettings = WindowSettings.shared
 
     var body: some View {
         TabPage {
+            PrefRow(
+                title: "Space Key",
+                description: "When the main window is active, Space plays or pauses, or adds/removes selected tracks "
+                    + "in the queue. Text fields keep normal typing. Queue mode requires Enable Queue (General)."
+            ) {
+                Picker("Space Key", selection: $windowSettings.spacePlaysPauses) {
+                    Text("Add / Remove from Queue").tag(false)
+                    Text("Play / Pause").tag(true)
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+
             PrefRow(
                 title: "Resample Quality",
                 description: "Quality of the sample rate conversion, used for files whose sample rate differs from "

@@ -12,6 +12,13 @@ import Observation
 final class WindowSettings {
     static let shared = WindowSettings(configStore: .shared)
 
+    var spacePlaysPauses: Bool {
+        didSet {
+            guard spacePlaysPauses != oldValue else { return }
+            configStore?.update { $0.general.spacePlaysPauses = spacePlaysPauses }
+        }
+    }
+
     var closeQuits: Bool {
         didSet {
             guard closeQuits != oldValue else { return }
@@ -25,6 +32,7 @@ final class WindowSettings {
     /// `configStore`: where `closeQuits` is read from and kept; `nil` = default, and nothing is persisted.
     init(configStore: ConfigStore? = nil) {
         self.configStore = configStore
+        spacePlaysPauses = configStore?.config.general.spacePlaysPauses ?? false
         closeQuits = configStore?.config.general.closeQuits ?? AppConfig.General().closeQuits
     }
 }

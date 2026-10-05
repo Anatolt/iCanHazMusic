@@ -60,8 +60,9 @@ private struct EmptyQueuePlaceholder: View {
                 .font(.system(size: 40, weight: .light))
             Text("The queue is empty")
                 .font(.title3.weight(.semibold))
-            Text("Select tracks or albums in a playlist and press Space (or choose Enqueue from the context menu) to "
-                + "add them here. Queued tracks play one after another, then playback goes on in the playlist.")
+            Text("Select tracks or albums in a playlist and choose Enqueue from the context menu to add them here. "
+                + (WindowSettings.shared.spacePlaysPauses ? "" : "You can also press Space. ")
+                + "Queued tracks play one after another, then playback goes on in the playlist.")
                 .font(.callout)
                 .multilineTextAlignment(.center)
         }
