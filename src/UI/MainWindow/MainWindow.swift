@@ -38,6 +38,17 @@ struct MainWindow: View {
         } detail: {
             PlayerArea()
         }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    Task { await ImportCoordinator.shared.rescanFolders() }
+                } label: {
+                    Label("Rescan Folders…", systemImage: "arrow.clockwise")
+                }
+                .help("Rescan folders for the selected playlist")
+                .disabled(ImportCoordinator.shared.isBusy || (store.isQueueShown && PlaybackState.shared.queue.isEnabled))
+            }
+        }
         .dropDestination(for: URL.self) { urls, _ in
             ImportCoordinator.shared.handleDrop(urls)
         }
