@@ -1,0 +1,43 @@
+name: macOS build and tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          swift --version
+          xcrun --show-sdk-version
+      - name: Audio fixtures
+        run: |
+          command -v ffmpeg >/dev/null || brew install ffmpeg
+          ./tests/prepare-fixtures.sh
+      - name: Tests (offline audio engine)
+        env:
+          SWIFT_BACKTRACE: enable=no
+        run: swift test --filter AllTests
+      - name: Compile both architectures
+        run: |
+          swift build -c release --arch arm64
+          swift build -c release --arch x86_64
+      - name: Package unsigned-for-distribution preview
+        run: |
+          mkdir -p ci-artifacts/iCanHazMusic.app/Contents/{MacOS,Resources}
+          lipo -create .build/arm64-apple-macosx/release/iCanHazMusic .build/x86_64-apple-macosx/release/iCanHazMusic -output ci-artifacts/iCanHazMusic.app/Contents/MacOS/iCanHazMusic
+          cp Info.plist ci-artifacts/iCanHazMusic.app/Contents/
+          cp res/main.icns res/ui/*.png LICENSE ci-artifacts/iCanHazMusic.app/Contents/Resources/
+          codesign --force --sign - ci-artifacts/iCanHazMusic.app
+          codesign --verify --deep --strict ci-artifacts/iCanHazMusic.app
+          ditto -c -k --keepParent ci-artifacts/iCanHazMusic.app ci-artifacts/iCanHazMusic-preview.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iCanHazMusic-universal-preview
+          path: ci-artifacts/iCanHazMusic-preview.zip
+          retention-days: 14
