@@ -9,6 +9,7 @@ struct MainWindow: View {
     /// Sidebar width at launch. Kept constant: it's only the *ideal* width the column starts with.
     @State private var initialSidebarWidth: CGFloat
     private let store = PlaylistStore.shared
+    @State private var spaceMonitor: Any?
     @Environment(\.openWindow) private var openWindow
 
     init() {
@@ -44,9 +45,32 @@ struct MainWindow: View {
         .navigationTitle(windowTitle)
         .onAppear {
             MainWindowOpener.shared.register { openWindow(id: AppConstants.mainWindowID) }
+            installSpaceMonitor()
+        }
+        .onDisappear {
+            if let spaceMonitor { NSEvent.removeMonitor(spaceMonitor) }
+            spaceMonitor = nil
         }
         .onChange(of: columnVisibility) { _, visibility in
             ConfigStore.shared.update { $0.ui.playlistSelector.shown = (visibility != .detailOnly) }
+        }
+    }
+
+    /// Also handles empty playlists, which have no VirtualPlaylistView key monitor.
+    private func installSpaceMonitor() {
+        guard spaceMonitor == nil else { return }
+        spaceMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let handled = MainActor.assumeIsolated {
+                guard WindowSettings.shared.spacePlaysPauses,
+                      event.keyCode == 49,
+                      event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+                      let window = event.window, window === Dialogs.hostWindow,
+                      window.attachedSheet == nil, !(window.firstResponder is NSText),
+                      !ImportCoordinator.shared.isBusy else { return false }
+                if !event.isARepeat { PlaybackState.shared.playPause() }
+                return true
+            }
+            return handled ? nil : event
         }
     }
 }
