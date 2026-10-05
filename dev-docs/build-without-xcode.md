@@ -50,10 +50,10 @@ verifies the signature and uploads a ZIP artifact. It uses `macos-15`; GitHub's 
 SDK toolchains. Hosted macOS machines already include Xcode; nothing needs installing
 on the user's Mac. FFmpeg is installed if missing, for audio fixtures.
 
-The workflow is prepared but has not been pushed or dispatched; no remote run or
-artifact is claimed. It does not install into /Applications, run the author's `share`
-tool, publish a release, or access signing secrets. Local universal compilation is a
-separate validation from a real CI run.
+The workflow runs on push, pull requests and manual dispatch. Check the Actions run
+for the current commit before relying on its uploaded artifact. It does not install
+into /Applications, run the author's `share` tool, publish a release, or access signing
+secrets. Local universal compilation is separate validation from a real CI run.
 
 The ZIP is a development preview. Distribution needs Developer ID signing and
 notarization (an Apple account/certificate and appropriately protected CI secrets).
