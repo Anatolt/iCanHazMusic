@@ -84,6 +84,11 @@ private struct AppCommands: Commands {
 
             Divider()
 
+            Button("Rescan Folders…") {
+                Task { await importer.rescanFolders() }
+            }
+            .disabled(importer.isBusy || showsQueue)
+
             Button("Import playlist...") {
                 Task { await importer.importPlaylists() }
             }

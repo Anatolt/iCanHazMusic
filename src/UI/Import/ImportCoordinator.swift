@@ -13,13 +13,84 @@ final class ImportCoordinator {
 
     /// The running import, if any. Menu items and drops are ignored while this is set.
     private(set) var session: ImportSession?
+    private var isChoosingRescanFolders = false
 
     /// An import is running, or the active playlist is still loading (adding to it would be unsafe).
-    var isBusy: Bool { session != nil || PlaylistStore.shared.isLoading }
+    var isBusy: Bool { session != nil || isChoosingRescanFolders || PlaylistStore.shared.isLoading }
 
     private init() {}
 
     // MARK: - Entry points
+
+    /// The dialog exposes the exact roots and the additive policy before a potentially long scan.
+    /// A legacy/file-only playlist chooses roots explicitly; changing roots never removes existing tracks.
+    func rescanFolders() async {
+        let store = PlaylistStore.shared
+        guard !isBusy, !(store.isQueueShown && PlaybackState.shared.queue.isEnabled),
+              let window = await MainWindowOpener.shared.show(), window.attachedSheet == nil,
+              !isBusy else { return }
+        let name = store.activeName
+        var folders = store.activePlaylist.sourceFolders
+        isChoosingRescanFolders = true
+        defer { isChoosingRescanFolders = false }
+
+        if !folders.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "Rescan Folders — \(name)"
+            alert.informativeText = "Add new tracks and refresh existing tags from:\n\n"
+                + folders.joined(separator: "\n")
+                + "\n\nMissing tracks are kept. Tracks removed from this playlist may be added again."
+            alert.addButton(withTitle: "Rescan")
+            alert.addButton(withTitle: "Choose Folders…")
+            alert.addButton(withTitle: "Cancel")
+            let response = await alert.beginSheetModal(for: window)
+            if response == .alertThirdButtonReturn { return }
+            if response != .alertFirstButtonReturn { folders = [] }
+        }
+        if folders.isEmpty {
+            let panel = NSOpenPanel()
+            panel.message = "Choose folders for this playlist. Rescans add new tracks and refresh tags; missing tracks are kept."
+            panel.prompt = "Rescan"
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.allowsMultipleSelection = true
+            guard await panel.beginSheetModal(for: window) == .OK else { return }
+            folders = FolderScanner.normalizedPaths(panel.urls.map(\.path))
+        }
+        guard !folders.isEmpty, store.activeName == name, !store.isLoading else { return }
+        let session = ImportSession(tagParsingConcurrency: store.effectiveTagParsingConcurrency)
+        self.session = session
+        let sheet = ImportProgressSheet(session: session)
+        sheet.present(on: window)
+        let outcome = await session.rescan(folders: folders)
+        var message: String?
+        if !outcome.aborted {
+            let old = store.activePlaylist
+            let readable = Set(outcome.results.filter { AlbumBuilder.isUsable($0.status) }
+                .map { $0.url.standardizedFileURL.path })
+            let refreshed = old.entries.filter { readable.contains($0.url.standardizedFileURL.path) }.count
+            if await store.applyRescan(outcome.results, folders: folders, to: name) {
+                let added = store.activePlaylist.trackCount - old.trackCount
+                message = "Added: \(added). Refreshed: \(refreshed). Files found: \(outcome.fileCount)."
+                    + "\nMissing tracks were kept."
+                if session.failed > 0 {
+                    message! += "\n\(session.failed) file(s) were unreadable or had no tags; existing entries were kept."
+                }
+                if !outcome.issues.isEmpty {
+                    message! += "\n\nScan incomplete:\n" + outcome.issues.prefix(8).joined(separator: "\n")
+                    if outcome.issues.count > 8 { message! += "\n… and \(outcome.issues.count - 8) more errors." }
+                }
+            } else {
+                message = "The playlist changed during the scan. No scan results were applied; please rescan again."
+            }
+            for issue in outcome.issues { Log.error("rescan: \(issue)") }
+        }
+        CoverCache.reset()
+        LyricsService.shared.refreshCurrent()
+        await sheet.dismiss()
+        self.session = nil
+        if let message { await Dialogs.showInfo(message, title: "Rescan Folders — \(name)") }
+    }
 
     func addDirectory() async {
         let panel = NSOpenPanel()
@@ -143,11 +214,15 @@ final class ImportCoordinator {
         let sheet = ImportProgressSheet(session: session)
         sheet.present(on: window)
 
+        let name = PlaylistStore.shared.activeName
+        let roots = playlists ? [] : await Task.detached(priority: .userInitiated) {
+            urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }.map(\.path)
+        }.value
         let outcome = playlists ? await session.run(playlists: urls) : await session.run(inputs: urls)
         CoverCache.reset()   // the import may have found art for albums that currently show a placeholder
         LyricsService.shared.refreshCurrent()
         if !outcome.aborted {
-            await PlaylistStore.shared.append(outcome.albums, to: PlaylistStore.shared.activeName)
+            await PlaylistStore.shared.append(outcome.albums, to: name, sourceFolders: roots)
         }
 
         await sheet.dismiss()

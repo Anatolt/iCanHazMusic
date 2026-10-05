@@ -91,6 +91,7 @@ struct Row: Identifiable, Hashable {
 final class Playlist {
     let albums: [Album]
     let isFlat: Bool
+    let sourceFolders: [String]
     let rows: [Row]
     /// Row index of the header of each album. Empty when `isFlat`.
     let headerRow: [Int]
@@ -107,7 +108,8 @@ final class Playlist {
     static let empty = Playlist(albums: [])
 
     /// `nextID`: the counter as stored with the playlist; it is raised above the IDs found in `albums` if needed.
-    init(albums input: [Album], isFlat: Bool = false, nextID: TrackID = 1) {
+    init(albums input: [Album], isFlat: Bool = false, nextID: TrackID = 1, sourceFolders: [String] = []) {
+        self.sourceFolders = FolderScanner.normalizedPaths(sourceFolders)
         let (albums, next) = Self.assigningIDs(input, nextID: nextID)
         self.albums = albums
         self.nextID = next
@@ -143,6 +145,7 @@ final class Playlist {
     private init(albums: [Album], sharingRowsOf other: Playlist) {
         self.albums = albums
         self.isFlat = other.isFlat
+        self.sourceFolders = other.sourceFolders
         self.rows = other.rows
         self.headerRow = other.headerRow
         self.trackRows = other.trackRows
@@ -152,9 +155,10 @@ final class Playlist {
         self.appendedFromRow = nil
     }
 
-    private init(appending base: Playlist, albums: [Album], isFlat: Bool) {
+    private init(appending base: Playlist, albums: [Album], isFlat: Bool, sourceFolders: [String]?) {
         let rebuilt = Playlist(albums: albums, isFlat: isFlat, nextID: base.nextID)
         self.albums = rebuilt.albums
+        self.sourceFolders = FolderScanner.normalizedPaths(sourceFolders ?? base.sourceFolders)
         self.isFlat = isFlat
         self.rows = rebuilt.rows
         self.headerRow = rebuilt.headerRow
@@ -199,20 +203,50 @@ final class Playlist {
     /// A new playlist with the tracks of `newAlbums` added at the end and everything regrouped, exactly as
     /// a reload would do: an album that is already there absorbs the new tracks, so row ids can shift.
     /// The new tracks get IDs.
-    func appending(_ newAlbums: [Album]) -> Playlist {
+    func appending(_ newAlbums: [Album], sourceFolders: [String]? = nil) -> Playlist {
         let built = AlbumBuilder.build(from: entries + newAlbums.flatMap(\.entries), flat: isFlat)
-        return Playlist(appending: self, albums: built, isFlat: isFlat)
+        return Playlist(appending: self, albums: built, isFlat: isFlat, sourceFolders: sourceFolders)
+    }
+
+    func settingSourceFolders(_ paths: [String]) -> Playlist {
+        Playlist(albums: albums, isFlat: isFlat, nextID: nextID, sourceFolders: paths)
+    }
+
+    /// Manual reconciliation is additive: keep missing/unreadable tracks and all existing IDs/duplicates.
+    /// It never interprets an inaccessible directory as a request to empty a playlist.
+    func rescanning(_ results: [TagReadResult], folders: [String]) -> Playlist {
+        var fresh: [String: TrackEntry] = [:]
+        var orderedPaths: [String] = []
+        for result in results where AlbumBuilder.isUsable(result.status) {
+            let path = result.url.standardizedFileURL.path
+            if fresh[path] == nil { orderedPaths.append(path) }
+            fresh[path] = TrackEntry(result: result)
+        }
+        var existing = Set<String>()
+        var updated = entries.map { old -> TrackEntry in
+            let path = old.url.standardizedFileURL.path
+            existing.insert(path)
+            guard var entry = fresh[path] else { return old }
+            entry.id = old.id
+            entry.path = old.path
+            return entry
+        }
+        for path in orderedPaths where !existing.contains(path) {
+            if let entry = fresh[path] { updated.append(entry) }
+        }
+        return Playlist(albums: AlbumBuilder.build(from: updated, flat: isFlat), isFlat: isFlat,
+                        nextID: nextID, sourceFolders: folders)
     }
 
     /// The same tracks grouped into albums (`flat == false`) or not.
     func settingFlat(_ flat: Bool) -> Playlist {
-        Playlist(albums: AlbumBuilder.build(from: entries, flat: flat), isFlat: flat, nextID: nextID)
+        Playlist(albums: AlbumBuilder.build(from: entries, flat: flat), isFlat: flat, nextID: nextID, sourceFolders: sourceFolders)
     }
 
     /// Without these tracks (IDs that aren't in the playlist are ignored).
     func removing(ids removed: Set<TrackID>) -> Playlist {
         let kept = entries.filter { !removed.contains($0.id) }
-        return Playlist(albums: AlbumBuilder.build(from: kept, flat: isFlat), isFlat: isFlat, nextID: nextID)
+        return Playlist(albums: AlbumBuilder.build(from: kept, flat: isFlat), isFlat: isFlat, nextID: nextID, sourceFolders: sourceFolders)
     }
 
     /// With track `id` moved to place `index` among the tracks of its album (the place it has after the move).
@@ -226,7 +260,7 @@ final class Playlist {
         var updated = albums
         updated[pos.album] = Album(directory: album.directory, artist: album.artist, title: album.title,
                                    year: album.year, hasMultipleArtists: album.hasMultipleArtists, tracks: tracks)
-        return Playlist(albums: updated, isFlat: isFlat, nextID: nextID)
+        return Playlist(albums: updated, isFlat: isFlat, nextID: nextID, sourceFolders: sourceFolders)
     }
 
     /// With album number `album` moved to place `index` (the place it has after the move). In a flat playlist
@@ -235,7 +269,7 @@ final class Playlist {
         guard albums.indices.contains(album), albums.indices.contains(index), album != index else { return nil }
         var updated = albums
         updated.insert(updated.remove(at: album), at: index)
-        return Playlist(albums: updated, isFlat: isFlat, nextID: nextID)
+        return Playlist(albums: updated, isFlat: isFlat, nextID: nextID, sourceFolders: sourceFolders)
     }
 
     /// With the tags of the files in `results` taken over (usable results only, others leave their tracks as
@@ -254,7 +288,7 @@ final class Playlist {
             entry.codec = old.codec
             return entry
         }
-        return Playlist(albums: AlbumBuilder.build(from: updated, flat: isFlat), isFlat: isFlat, nextID: nextID)
+        return Playlist(albums: AlbumBuilder.build(from: updated, flat: isFlat), isFlat: isFlat, nextID: nextID, sourceFolders: sourceFolders)
     }
 
     /// With the duration and format label of one track replaced; `nil` if there is no such track.

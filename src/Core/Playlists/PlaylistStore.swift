@@ -223,12 +223,14 @@ final class PlaylistStore {
 
     /// Adds albums at the end of the active playlist and stores it. Ignored for any other playlist and
     /// while the active one is still loading.
-    func append(_ albums: [Album], to name: String) async {
-        guard !albums.isEmpty, !isLoading, let match = existingName(matching: name),
+    func append(_ albums: [Album], to name: String, sourceFolders: [String] = []) async {
+        guard (!albums.isEmpty || !sourceFolders.isEmpty), !isLoading, let match = existingName(matching: name),
               Self.key(match) == Self.key(activeName) else { return }
 
         let current = activePlaylist
-        let updated = await Task.detached(priority: .userInitiated) { current.appending(albums) }.value
+        let updated = await Task.detached(priority: .userInitiated) {
+            current.appending(albums, sourceFolders: current.sourceFolders + sourceFolders)
+        }.value
         // Something else replaced the content in the meantime (can't happen behind the modal import sheet).
         guard activePlaylist === current else { return }
 
@@ -237,6 +239,11 @@ final class PlaylistStore {
         if let playing = playingName, Self.key(playing) == Self.key(match) {
             playback?.playlistDidChange()
         }
+    }
+
+    /// Commits a rescan against the latest content; a concurrent replacement is reported to the UI.
+    func applyRescan(_ results: [TagReadResult], folders: [String], to name: String) async -> Bool {
+        await replaceActive(name) { $0.rescanning(results, folders: folders) }
     }
 
     /// Removes these tracks from the active playlist (see `Playlist.trackIDs`). Playback stops if its track is

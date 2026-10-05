@@ -24,6 +24,13 @@ final class ImportSession {
         let aborted: Bool
     }
 
+    struct RescanOutcome {
+        let results: [TagReadResult]
+        let issues: [String]
+        let fileCount: Int
+        let aborted: Bool
+    }
+
     struct Outcome {
         /// Albums in playlist order, ready to be appended.
         let albums: [Album]
@@ -58,6 +65,7 @@ final class ImportSession {
     @ObservationIgnored private let tagParsingConcurrency: Int
     @ObservationIgnored private var readingStartedAt: Date?
     @ObservationIgnored private var readingFinishedAt: Date?
+    @ObservationIgnored private var scanTask: Task<FolderScanner.Snapshot, Never>?
     @ObservationIgnored private var gatherTask: Task<[URL], Never>?
     @ObservationIgnored private var readTask: Task<[TagReadResult], Never>?
     @ObservationIgnored private var artTask: Task<Void, Never>?
@@ -85,9 +93,24 @@ final class ImportSession {
     func abort() {
         guard !isAborting, !isFinishing else { return }
         isAborting = true
+        scanTask?.cancel()
         gatherTask?.cancel()
         readTask?.cancel()
         artTask?.cancel()
+    }
+
+    func rescan(folders: [String]) async -> RescanOutcome {
+        let task = Task.detached(priority: .userInitiated) { FolderScanner.scan(folders) }
+        scanTask = task
+        let snapshot = await task.value
+        scanTask = nil
+        total = snapshot.files.count
+        guard !isAborting, !snapshot.cancelled else {
+            return RescanOutcome(results: [], issues: snapshot.issues, fileCount: total, aborted: true)
+        }
+        let outcome = await reload(files: snapshot.files)
+        return RescanOutcome(results: outcome.results, issues: snapshot.issues,
+                             fileCount: total, aborted: outcome.aborted)
     }
 
     func run(inputs: [URL]) async -> Outcome {

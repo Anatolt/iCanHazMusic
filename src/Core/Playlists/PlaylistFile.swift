@@ -30,6 +30,7 @@ struct PlaylistFile: Codable {
     var version = PlaylistFile.currentVersion
     var tracks: [TrackEntry] = []
     var isFlat = false
+    var sourceFolders: [String] = []
     var nextID: TrackID = 1
     var lastPlayed: TrackID?
     /// Entries that were dropped while decoding (not written).
@@ -38,12 +39,14 @@ struct PlaylistFile: Codable {
     private enum CodingKeys: String, CodingKey {
         case version, tracks
         case isFlat = "is_flat"
+        case sourceFolders = "source_folders"
         case nextID = "next_id"
         case lastPlayed = "last_played"
     }
 
-    init(tracks: [TrackEntry], isFlat: Bool = false, nextID: TrackID = 1, lastPlayed: TrackID? = nil) {
+    init(tracks: [TrackEntry], isFlat: Bool = false, nextID: TrackID = 1, lastPlayed: TrackID? = nil, sourceFolders: [String] = []) {
         self.tracks = tracks
+        self.sourceFolders = FolderScanner.normalizedPaths(sourceFolders)
         self.isFlat = isFlat
         self.nextID = nextID
         self.lastPlayed = lastPlayed
@@ -51,6 +54,7 @@ struct PlaylistFile: Codable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        sourceFolders = FolderScanner.normalizedPaths((try? c.decode([String].self, forKey: .sourceFolders)) ?? [])
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 0
         isFlat = (try? c.decodeIfPresent(Bool.self, forKey: .isFlat)) ?? false
         nextID = (try? c.decodeIfPresent(TrackID.self, forKey: .nextID)) ?? 1
@@ -104,7 +108,7 @@ struct PlaylistFile: Codable {
             Log.error("\(url.lastPathComponent): skipped \(file.skipped) entries without a usable path")
         }
         let playlist = Playlist(albums: AlbumBuilder.build(from: file.tracks, flat: file.isFlat),
-                                isFlat: file.isFlat, nextID: file.nextID)
+                                isFlat: file.isFlat, nextID: file.nextID, sourceFolders: file.sourceFolders)
         return .loaded(playlist, lastPlayed: file.lastPlayed.flatMap { playlist.position(of: $0) == nil ? nil : $0 })
     }
 
@@ -113,7 +117,7 @@ struct PlaylistFile: Codable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(PlaylistFile(tracks: playlist.entries, isFlat: playlist.isFlat,
-                                                   nextID: playlist.nextID, lastPlayed: lastPlayed))
+                                                   nextID: playlist.nextID, lastPlayed: lastPlayed, sourceFolders: playlist.sourceFolders))
         try data.write(to: url, options: .atomic)
     }
 
